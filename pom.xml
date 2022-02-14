@@ -18,8 +18,8 @@
                 <version>2.6-SNAPSHOT</version>
                     <dependencies>
                         <dependency>
-                            <groupId>in.succinct</groupId>
-                            <artifactId>standalone</artifactId>
+                            <groupId>in.succinct.beckn</groupId>
+                            <artifactId>bgapp</artifactId>
                             <version>1.0-SNAPSHOT</version>
                         </dependency>
                     </dependencies>
