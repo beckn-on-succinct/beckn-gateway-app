@@ -1,0 +1,32 @@
+mvn clean -DskipTests=true package
+rm -rf tmp/gateway-docker
+
+mkdir -p tmp/gateway-docker
+
+cp -Rp target overrideProperties bin tmp/gateway-docker/
+mkdir -p tmp/gateway-docker/.keystore
+
+
+tag=`date +%Y%m%d%H%M%S`
+cpath=`bin/refreshjars`
+source tmp/gateway-docker/overrideProperties/config/envvars
+
+echo 'MAILTO=""
+* * * * * /gateway/bin/trigger PERSISTED_TASK_POLLER
+*/5 * * * * /gateway/bin/trigger SUBSCRIPTION_RENEWAL_ALERT' >  tmp/gateway-docker/crontab.txt
+
+echo "#!/bin/sh 
+crond -bS;
+
+/usr/bin/java -Xmx4g -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=tmp/java.hprof -XX:-OmitStackTraceInFastThrow -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${dport}", "-DPORT=${wport} -Dswf.env=production -Dswf.pidfile=tmp/pid -Dderby.locks.waitTimeout=10 -DSystem.out.close=true -DSystem.err.close=true -DSystem.in.close=true -cp overrideProperties/:target/classes/${cpath}:target/dependency/* com.venky.swf.JettyServer
+
+
+">tmp/gateway-docker/bin/service-start
+
+chmod +x tmp/gateway-docker/bin/service-start
+
+
+docker -H localhost build -t gateway:${tag} -o type=docker .
+docker -H localhost image tag gateway:$tag gateway:latest 
+
+

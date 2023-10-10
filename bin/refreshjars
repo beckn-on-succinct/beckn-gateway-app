@@ -1,0 +1,2 @@
+mvn dependency:tree |grep -e succinct.*jar -e venkatramanm.*jar  | sed -e 's/:jar:/-/' -e "s/:compile/.jar/" -e 's@^.*:@:target/dependency/@g' |grep '.jar' |tr -d '\n'
+
