@@ -99,7 +99,7 @@
 
         <dependency>
             <groupId>in.succinct.beckn</groupId>
-            <artifactId>gateway</artifactId>
+            <artifactId>gateway.plugin</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
         <dependency>
