@@ -26,7 +26,8 @@ crond -bS;
 chmod +x tmp/gateway-docker/bin/service-start
 
 
-docker -H localhost build -t gateway:${tag} -o type=docker .
-docker -H localhost image tag gateway:$tag gateway:latest 
+docker  build -t gateway:${tag} -o type=docker .
+docker  image tag gateway:$tag gateway:latest 
 
 
+docker  container create --name prod-gateway.${tag} --net onixnet --ip 172.25.0.30 -p${wport}:${wport} --restart unless-stopped  gateway:latest 
