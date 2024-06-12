@@ -1,0 +1,640 @@
+<link as='style' rel="stylesheet" href="/templates/css/bg.css">
+<script src="/scripts/node_modules/vue/dist/vue.global.js"></script>
+<script src="/scripts/node_modules/lodash/lodash.js" ></script>
+
+<script type="text/javascript">
+    $(function(){
+        const { createApp } = Vue;
+
+        createApp({
+            data() {
+                return {
+                    show_id: new URL(window.location).searchParams.get("show_id"),
+                    User: {},
+                    Applications : [],
+                    Company : {} ,
+                    Catalog : [],
+                    LookUp : {
+                        Meta:{},
+                        partial:"",
+                        timeOut : undefined,
+                        delay: 800,
+                        Entries:[],
+                    },
+                    Meta :{  
+                        User : {
+                            TextFields : ["FirstName","LastName","AddressLine1", "AddressLine2", "AddressLine3"] ,
+                            ReferenceFields: [{ field: "PinCode" ,  refModel: "PinCode" , refDescriptor:"PinCode", refModelArrayName:"PinCodes" ,apiBaseName : 'pin_codes'}],
+                        },
+                        EndPoint : {
+                            ReferenceFields: [{ field: "OpenApi", refModel: "OpenApi", refDescriptor: "Name", refModelArrayName: "OpenApis", apiBaseName: 'open_apis' }],
+                        },
+                        Facility: {
+                            TextFields: ["AddressLine1", "AddressLine2", "AddressLine3"],
+                            ReferenceFields: [{ field: "PinCode", refModel: "PinCode", refDescriptor: "PinCode", refModelArrayName: "PinCodes", apiBaseName: 'pin_codes' }],
+                        },
+                    },
+                    Notification : {
+                        errorTimeOut: undefined,
+                        msg : undefined
+                    }
+                }
+            },
+            methods: {
+                onFileSelect(e,fi) {
+                    e && e.preventDefault();
+                    let self = this;
+                    self.Catalog[fi].FileContentName = e.target.files[0].name;
+                    self.createDataFile(e.target.files[0], function (datafile) {
+                        self.Catalog[fi].File = datafile;
+                        self.$forceUpdate();
+                    });
+
+                },
+                createDataFile: function (file, callback) {
+                    var reader = new FileReader();
+                    reader.onloadend = (e) => {
+                        callback(e.target.result);
+                    }
+
+                    reader.readAsDataURL(file);
+                },
+                showErrorMessage(msg, duration){
+                    let self = this; 
+                    let time = duration || 500;
+                    self.Notification.msg = msg;
+                    if(self.Notification.errorTimeOut) {
+                        clearTimeout(self.Notification.errorTimeOut);
+                        self.Notification.errorTimeOut = undefined;
+                    }
+                    return new Promise(function (resolve, reject) {
+                        self.Notification.errorTimeOut = setTimeout(function () {
+                            self.Notification.msg = undefined;
+                            resolve();
+                        }, time);
+                    });
+                },
+                showError(err){
+                    if (err.response) {
+                        if (err.response.status === 401) {
+                            window.location.replace("/logout");
+                        } else if (err.response.status === 413) {
+                            showErrorMessage("Size Uploaded Too Big");
+                        } else if (err.response.data && err.response.data.SWFHttpResponse.Error) {
+                            showErrorMessage(err.response.data.SWFHttpResponse.Error)
+                        } else {
+                            showErrorMessage(err.response.toString());
+                        }
+                    } else {
+                        showErrorMessage(err.toString());
+                    }
+
+                },
+                getFieldMeta(field,onModel){
+                    return this.Meta[onModel].ReferenceFields.find(function (f) {
+                        return field == f.field;
+                    });
+                },
+                onChange: function (event, field , dbModelName , onVueModel) {
+                    event && event.preventDefault();
+                    let self = this;
+
+                    if (self.isKeyTriggerable(event)) {
+                        self.LookUp.Meta = self.getFieldMeta(field,dbModelName);
+                        self.LookUp.Meta.vueModel = onVueModel;
+
+                        if (self.LookUp.timeOut) {
+                            clearTimeout(self.LookUp.timeOut);
+                            self.LookUp.timeOut = undefined;
+                        }
+                        self.LookUp.timeOut = setTimeout(function () {
+                            self.clearLookup();
+                            self.LookUp.partial = event.target.value;
+                            let meta = self.LookUp.Meta;
+                            let ajaxUrl = '/' + meta.apiBaseName + "/search";
+                            let q = event.target.value.replace(/[^a-zA-Z0-9 ]/g, " ").trim();
+                            if (field) {
+                                let column = _.toUpper(_.snakeCase(meta.refDescriptor));
+                                q = column + ":" + q.replace(" ", `* AND ${column}:`) + "*";
+                            }
+                            api().url(ajaxUrl).get({ q: q, maxRecords: 6 }).then(function (response) {
+                                if (event.target.value == self.LookUp.partial) {
+                                    self.LookUp.Entries = response[meta.refModelArrayName];
+                                    if (self.LookUp.Entries.length > 0) {
+                                        self.loadLookupEntries(event.target);
+                                    }
+                                }
+                            }).catch(function (err) {
+                                showError(err);
+                            });
+                        }, self.LookUp.delay);
+
+                    }
+                },
+                onEntrySelect(event,entry){
+                    event && event.preventDefault();
+                    let self = this;
+                    self.hideKeyboard().then(function () {
+                        self.LookUp.Meta.vueModel[self.LookUp.Meta.field] = entry;
+                        self.clearLookup();
+                    });
+                },
+                spinner(on){
+                    if (on){
+                        this.$refs["spinner"].classList.remove("hidden");
+                    }else{
+                        this.$refs["spinner"].classList.add("hidden");
+                    }
+                },
+                show(id){
+                    this.show_id = id;
+                    this[id]();
+                },
+                dashboard(){
+  
+                },
+                loadCompanies(){
+                    let self = this;
+                    let b = btoa(
+                        JSON.stringify(
+                            {
+                                "Facility": ["Id","Name", "AddressLine1", "AddressLine2", "AddressLine3","PinCodeId"],
+                                "PinCode" : ["PinCode"]
+                            }));
+
+                    return api().url("/companies").headers({"IncludedModelFields":b}).get().then(function (r) {
+                        if (r.Companies.length > 0) {
+                            self.Company = r.Companies[0];
+                        } else {
+                            self.Company = {};
+                        }
+                        if (!self.Company.Facilities || self.Company.Facilities.length ==0){
+                            self.Company.Facilities = [{ PinCode: {} }];
+                        }
+                        for (i = 0 ; i < self.Company.Facilities.length ; i ++){
+                            self.Catalog.push({});
+                        }
+                    });
+                },
+                company_profile(){
+                    let self =this;
+                },
+                profile(){
+                    let self = this;
+                },
+                isKeyTriggerable: function (e) {
+                    return (e && e.target.value.length > 0);
+                },
+
+                navigate(e, index, length) {
+                    e && e.preventDefault();
+                    let self = this;
+                    let anchors = this.$refs['LookupEntries'].getElementsByTagName("a");
+                    anchors[index % length].focus();
+                },
+                loadLookupEntries: function (element) {
+                    var div = this.getParentDiv(element);
+                    if (div) {
+                        div.appendChild(this.$refs['LookupEntries']);
+                        this.$refs['LookupEntries'].classList.remove('hidden');
+                    }
+                },
+
+                getParentDiv(element) {
+                    var div = element;
+                    while (div && div.tagName !== 'DIV') {
+                        div = div.parentElement;
+                    }
+                    return div;
+                },
+                clearLookup() {
+                    this.LookUp.Entries = [];
+                    this.$refs['LookupEntries'].classList.add('hidden');
+                },
+                removeList(event) {
+                    this.clearLookup();
+                },
+                hideKeyboard(event) {
+                    let self = this;
+                    return new Promise(function (resolve, reject) {
+                        let dummy = self.$refs['content'];
+                        setTimeout(function () {
+                            dummy.focus();
+                            setTimeout(function () {
+                                resolve();
+                            }, 50);
+                        }, 50);
+                    });
+
+                },
+                
+                application(){
+                    let self = this; 
+                    self.Applications = [];
+                    self.loadCompanies().then(function(){
+                        let b = btoa(
+                            JSON.stringify(
+                                {"ApplicationPublicKey" : ["PublicKey","ValidFrom","ValidUntil", "Purpose" ,  "KeyId"], 
+                                    "EndPoint" : ["Id","BaseUrl","OpenApiId"],
+                                    "OpenApi"  : ["Name"]  }));
+
+                        api().url("/applications/search").headers({"IncludedModelFields" : b}).get({ q: `(COMPANY_ID: ${self.Company.Id})` }).then(function(r){
+                            if (r.Applications.length >0 ){
+                                r.Applications.forEach(a=>{
+                                    self.Applications.push(a);  
+                                })
+                            }
+                        });  
+                    })
+                },
+                
+                logout(){
+                    window.location.replace("/logout");
+                },
+                save(apiBaseName,refModel,refModelArrayName,headers = {}){
+                    let self = this;
+                    self.spinner(true);
+                    let parameters = {};
+                    parameters[refModel] = this[refModel];
+                    api().url(`/${apiBaseName}/save`).headers(headers).parameters(parameters).post().then(function (r) {
+                        if (refModel === refModelArrayName){
+                            self[refModel] = r[refModelArrayName];    
+                        }else {
+                            self[refModel] = r[refModelArrayName][0];
+                        }
+                        self.showErrorMessage(`${refModel} Saved`);
+                    }).finally(function () {
+                        self.spinner(false);
+                    });
+
+                },
+                submitCatalog(event,fi) {
+                    event && event.preventDefault();
+                    let self = this;
+                    self.spinner(true);
+                    api().url(`/catalogs/ingest/${self.Company.Facilities[fi].Id}`).parameters({ Catalog: self.Catalog[fi] }).post().then(function (response) {
+                        showErrorMessage("Catalog uploaded");
+                    }).finally(function () {
+                        self.spinner(false);
+                    });
+                },
+
+            },
+            mounted() {
+                let self = this;
+                api().url("/users/current").get().then(function(response){
+                    self.User = response.User;
+                    if (!self.User.PinCode){
+                        self.User.PinCode = {};
+                    }
+                }).then(function(){
+                    self.loadCompanies().then(function(){
+                        if (self.show_id) {
+                            self.show(self.show_id);
+                        } else {
+                            self.show("dashboard")
+                        }
+                        let e = self.$refs['content'];
+                        e.classList.remove("invisible");
+                    });
+                });
+
+            },
+
+        }).mount('#app')
+    })
+</script>
+
+<div class="container mx-auto relative" id="app">
+    <div id="LookupEntries" ref="LookupEntries" class="absolute my-0 w-full h-full hidden z-10" >
+        <div v-for="(entry,index) in LookUp.Entries" >
+            <a href="#" class="ml-4 block p-2 bg-blue-100 focus:bg-blue-300 focus:text-white" v-on:click="onEntrySelect($event,entry)" 
+                v-on:keyup.space="onEntrySelect($event,entry)"
+                v-on:keyup.enter="onEntrySelect($event,entry)"
+                v-on:keyup.up="navigate($event,index-1,LookUp.Entries.length)"
+                v-on:keyup.down="navigate($event,index+1,LookUp.Entries.length)">{{entry[LookUp.Meta.refDescriptor]}} </a>
+        </div>
+    </div>
+    <div id="spinner" ref="spinner" class="absolute my-0 w-full h-full cursor-wait z-10 hidden">
+    </div>
+    <div class="w-full fixed left-0 z-10" v-if="Notification.msg">
+        <div id="msg" ref="msg" class="text-center p-1 bg-green-200 text-dark font-semibold " >
+            {{Notification.msg}}
+        </div>
+    </div>
+    
+    <div class="flex flex-row h-full invisible relative" ref="content">
+        <div class="flex flex-col group w-3 hover:w-max  h-full fixed   left-0 z-10 bg-blue-600">
+            <div class="group-hover:visible invisible  p-2 text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-900 hover:cursor-pointer fas fa-chart-line text-xl"
+                v-on:click="show('dashboard')" title="Dashboard"></div>
+            <div class="group-hover:visible invisible p-2  text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-900 hover:cursor-pointer fas fa-id-card text-xl"
+                v-on:click="show('profile')" title="Profile"></div>
+            <div class="group-hover:visible invisible p-2  text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-900  hover:cursor-pointer fas fa-cloud text-xl"
+                v-on:click="show('application')" title="Application" ></div>
+            <div class="group-hover:visible invisible p-2  text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-900  hover:cursor-pointer fas fa-building text-xl "
+                v-on:click="show('company_profile')" title="Company Profile" > </div>
+            <div class="group-hover:visible invisible px-2 bg-blue-600 "></div>
+            <div class="group-hover:visible invisible p-2  text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-900  hover:cursor-pointer fas fa-power-off text-xl"
+                v-on:click="logout()" title="Logout"></div>
+        </div>
+        <div class="md:mx-11  mx-4 basis-full mt-6" >
+            <div id="dashboard" class=" basis-full" v-if="show_id === 'dashboard'">Dashboard</div>
+            <div id="application" class=" basis-full" v-else-if="show_id === 'application'">
+                <div class="grid grid-cols-2 mt-2">
+                    <div class="text-dark text-2xl font-semibold">Application</div>
+                </div>
+                <div class="relative mt-20 pb-4 text-orange-500 font-semibold text-center pl-3 -ml-3 -mr-6 pr-6" v-if="Applications.length == 0">
+                    You don't have any beckn enabled applications !
+                </div>
+                <div class="relative mt-8 pb-4 border border-gray-600 box-content pl-3 -ml-3 -mr-6 pr-6" v-for="(Application,ai) in  Applications">
+                    <div class="mt-5 grid sm:grid-cols-1 md:grid-cols-2 gap-2">
+                        <div class="relative my-1">
+                            <input v-bind:id="'Name_'+ai" v-model="Application.AppId" type="text"
+                                class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                                placeholder="Application Id" disabled/>
+                            <label v-bind:for="'Name_'+ai"
+                                class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                    peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                    peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm ">
+                                Application Id
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mt-2 grid sm:grid-cols-1 md:grid-cols-12 gap-2" v-for="(pk,i) in Application.ApplicationPublicKeys">
+                        <div class="relative my-1 md:col-span-6">
+                            <input v-bind:id="'pk_'+ai+'_'+i" v-model="pk.PublicKey" type="text"
+                                class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                                v-bind:placeholder="pk.Purpose + ' Public Key'" disabled/>
+                            <label v-bind:for="'pk_'+ai+'_'+i"
+                                class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                                                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                                                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">
+                                {{pk.Purpose + ' Public Key'}}
+                            </label>
+                        </div>
+                        <div class="relative my-1 md:col-span-3">
+                            <input v-bind:id="'from_'+ai+'_'+i" v-model="pk.ValidFrom" type="datetime-local"
+                                class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                                placeholder="Valid From" disabled/>
+                            <label v-bind:for="'from_'+ai+'_'+i"
+                                class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">
+                                Valid From
+                            </label>
+                        </div>
+                        <div class="relative my-1 md:col-span-3">
+                            <input v-bind:id="'to_'+ai+'_'+i" v-model="pk.ValidUntil" type="datetime-local"
+                                class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                                placeholder="Valid To" disabled/>
+                            <label v-bind:for="'to_'+ai+'_'+i"
+                                class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">
+                                Valid To
+                            </label>
+                        </div>
+                    </div>
+                    
+                    
+                    <div class="mt-2 grid sm:grid-cols-1 md:grid-cols-2 gap-2" v-for="(ep,i) in Application.EndPoints">
+                        <div class="relative my-1">
+                            <input v-bind:id="'ep_'+ai+'_'+i" v-model="ep.BaseUrl" type="text"
+                                class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                                placeholder="Base Url" disabled/>
+                            <label v-bind:for="'ep_'+ai+'_'+i"
+                                class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                                                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                                                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">
+                                Base Url
+                            </label>
+                        </div>
+                        <div class="relative my-1 flex flex-row">
+                            <input v-bind:id="'ep_oapi_'+ai+'_'+i" v-model="ep.OpenApi.Name" type="text"
+                                class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                                placeholder="Open Api Implemented" v-on:input="onChange($event,'OpenApi','EndPoint',ep)"
+                                v-on:focus="removeList($event)" v-on:keyup.down="navigate($event,0,LookUp.Entries.length)" disabled/>
+                            <label v-bind:for="'ep_oapi_'+ai+'_'+i"
+                                class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">
+                                Open Api Implemented
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="company_profile" class="basis-full" v-else-if="show_id === 'company_profile'">
+                <div class="grid grid-cols-1 mt-2">
+                    <div class="text-dark text-2xl font-semibold">Company Profile</div>
+                </div>
+
+                <div class="mt-5 grid sm:grid-cols-1 md:grid-cols-3 gap-2"> 
+                    <div class="relative my-1">
+                        <input id="Name" v-model="Company.Name" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Company Name"  disabled/>
+                        <label for="Name"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company Name</label>
+                    </div>
+                    <div class="relative my-1">
+                        <input id="DateOfIncorporation" v-model="Company.DateOfIncorporation" type="date"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Date Of Incorporation" disabled/>
+                        <label for="DateOfIncorporation"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Date Of Incorporation</label>
+                    </div>
+                    <div class="relative my-1">
+                        <input id="DomainName" v-model="Company.DomainName" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Domain Name" disabled/>
+                        <label for="Name"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Domain Name
+                            </label>
+                    </div>
+                    <div class="relative my-1">
+                        <input id="SubscriberId" v-model="Company.SubscriberId" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Generated Subscriber Id" disabled />
+                        <label for="SubscriberId"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">
+                            Generated Subscriber Id
+                        </label>
+                    </div>
+
+                    <div class="relative my-1">
+                        <input id="RegistrationNumber" v-model="Company.RegistrationNumber" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Company Registration Number" disabled/>
+                        <label for="Name"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company Registration Number
+                        </label>
+                    </div>
+                    <div class="relative my-1">
+                        <input id="TaxId" v-model="Company.TaxIdentificationNumber" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Tax Identification Number" disabled />
+                        <label for="Name"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company
+                            Tax Identification Number
+                        </label>
+                    </div>
+                </div>
+                <div class="mt-7 grid sm:grid-cols-1 md:grid-cols-3 gap-2 border border-dark p-3 relative">
+                    <label class="absolute left-0  ml-3 px-1 -mt-4 py-1 bg-gray-300 border border-black text-dark rounded-xl text-sm" >Banking Details</label>
+                    <div class="relative mb-1 mt-4">
+                        <input id="BankName" v-model="Company.BankName" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Bank Name" disabled />
+                        <label for="BankName"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company
+                            Bank Name
+                        </label>
+                    </div>
+                    <div class="relative mb-1 mt-4">
+                        <input id="BankCode" v-model="Company.BankCode" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Bank Code" disabled />
+                        <label for="BankCode"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company
+                            Bank Code
+                        </label>
+                    </div>
+                    <div class="relative mb-1 mt-4">
+                        <input id="BranchName" v-model="Company.BranchName" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Branch Name" disabled />
+                        <label for="BranchName"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company
+                            Branch Name
+                        </label>
+                    </div>
+                    <div class="relative my-1">
+                        <input id="AccountNo" v-model="Company.AccountNo" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Account Number" disabled />
+                        <label for="AccountNo"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                                    peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                                    peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company
+                            Account Number
+                        </label>
+                    </div>
+                    <div class="relative my-1">
+                        <input id="VirtualPaymentAddress" v-model="Company.VirtualPaymentAddress" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Virtual Payment Address" disabled />
+                        <label for="VirtualPaymentAddress"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                                                                        peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                                                        peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">Company
+                            Virtual Payment Address
+                        </label>
+                    </div>
+                </div>
+                <div class="mt-7 grid sm:grid-cols-1 md:grid-cols-3 gap-2 border border-dark  p-3 relative" v-for="(Facility,fi) in Company.Facilities">
+
+                    <input v-bind:id="'Name_'+fi" v-model="Facility.Name" type="text"
+                        class="absolute left-0 ml-3 px-1 -mt-4 h-7  w-24 bg-gray-300 text-dark rounded-xl text-sm"
+                        placeholder="Name" disabled />
+
+                    <div v-bind:class="'relative mb-1 ' + (( i == 0)? 'mt-4' : ((i <= 2)? 'sm:mt-1 md:mt-4' : '' ))" 
+                        v-for="(tf,i) in     Meta.Facility.TextFields">
+                        <input v-bind:id="tf+'_'+fi" v-model="Facility[tf]" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            v-bind:placeholder="tf" disabled />
+                        <label v-bind:for="tf+'_'+fi"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                            peer-focus:text-gray-500 peer-focus:bg-white peer-focus:-translate-y-5  peer-focus:text-sm">{{tf}}</label>
+                    </div>
+                    <div class="relative my-1">
+                        <input v-bind:id="'PinCode_'+fi" v-model="Facility.PinCode.PinCode" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="PinCode" v-on:input="onChange($event,'PinCode','Facility',Facility)"
+                            v-on:focus="removeList($event)" v-on:keyup.down="navigate($event,0,LookUp.Entries.length)"
+                            disabled />
+                        <label v-bind:for="'PinCode_'+fi"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">PinCode</label>
+                    </div>
+                    
+                    <div class="md:flex md:flex-row w-full col-span-2 relative my-1 border border-gray-500">
+                        <label class="absolute left-0 -mt-4 bg-white ml-1 px-1 py-1 text-dark  text-sm ">Upload Catalog</label>
+                
+                        <label v-bind:for="'new_doc_' + fi"
+                            v-bind:class="'whitespace-nowrap text-base font-semibold mt-2 px-3 py-2 text-blue-600 hover:text-blue-700 active:text-blue-800   hover:cursor-pointer '+ (Catalog[fi].FileContentName ? 'fas fa-folder-open': 'fas fa-folder')">&nbsp;{{Catalog[fi].FileContentName
+                            ? Catalog[fi].FileContentName : 'Select...'}}</label>
+                        <input v-bind:id="'new_doc_'+ fi" ref="new_doc" type="file" class="hidden" v-on:input="onFileSelect($event,fi)" />
+                        <div class="inline-block w-full">
+                            <div class="flex flex-row place-content-end">
+                                <button
+                                    class="text-base rounded-xl px-10 mr-2   py-1 my-2  hover:cursor-pointer disabled:hover:cursor-default bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white disabled:bg-gray-600"
+                                    @click="submitCatalog($event,fi)"
+                                    :disabled="!(Catalog[fi].FileContentName && Catalog[fi].FileContentName.trim().length > 0)">Upload</button>
+                
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div id="profile" class="basis-full" v-else-if="show_id === 'profile'">
+                <div class="grid grid-cols-1 mt-2">
+                    <div class="text-dark text-2xl font-semibold">Update Profile</div>
+                </div>
+                
+                <div class="mt-5 grid sm:grid-cols-1 md:grid-cols-3 gap-2 ">
+                    <div class="relative my-1">
+                        <input id="Name" v-model="User.Name" type="email"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            placeholder="Primary Email" disabled />
+                        <label for="Name"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75  text-gray-500
+                                                peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                                                peer-focus:text-gray-500 peer-focus:bg-white peer-focus:-translate-y-5  peer-focus:text-sm">Primary
+                            Email</label>
+                    </div>
+
+                    <div class="relative my-1" v-for="(tf,i) in Meta.User.TextFields">
+                        <input v-bind:id="tf" v-model="User[tf]"  type="text" class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer"
+                            v-bind:placeholder="tf" disabled />
+                        <label v-bind:for="tf"
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white peer-focus:-translate-y-5  peer-focus:text-sm">{{tf}}</label>
+                    </div>
+                    <div class="relative my-1">
+                        <input id="PinCode" v-model="User.PinCode.PinCode" type="text"
+                            class="w-full h-full form-input placeholder:text-gray-500  focus:placeholder:text-transparent peer" placeholder="PinCode"
+                            v-on:input="onChange($event,'PinCode','User',User)" v-on:focus="removeList($event)" v-on:keyup.down="navigate($event,0,LookUp.Entries.length)"
+                            disabled />
+                        <label for="PinCode"  
+                            class="absolute left-0 ml-1 px-1 mt-2 bg-white  -translate-y-5 text-sm duration-75 text-gray-500
+                            peer-placeholder-shown:bg-transparent peer-placeholder-shown:text-transparent
+                            peer-focus:text-gray-500 peer-focus:bg-white  peer-focus:-translate-y-5  peer-focus:text-sm">PinCode</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+</div>

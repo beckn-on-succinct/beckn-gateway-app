@@ -27,6 +27,14 @@ then
     baseurl="http://localhost:${wport}"
 fi
 
+if [ "${IncludedModelFields}" = "" ] 
+then 
+    IncludedModelFields="{}"
+fi
 
-echo curl  -L -v -H "ApiKey: $apiKey" -H "Content-Type: ${content_type}"  ${baseurl}/$api $@
-curl  -L -s -H "ApiKey: $apiKey" -H "Content-Type: ${content_type}"  -H "ApiProtocol: ${ApiProtocol}"  ${baseurl}/$api "$@"
+IncludedModelFields=`printf "${IncludedModelFields}"|base64 --wrap=0`
+
+
+
+echo curl  -L -s -H "ApiKey: $apiKey" -H "IncludedModelFields: ${IncludedModelFields}" -H "Content-Type: ${content_type}"  -H "ApiProtocol: ${ApiProtocol}"  ${baseurl}/$api "$@"
+curl  -L -s -H "ApiKey: $apiKey" -H "IncludedModelFields: ${IncludedModelFields}" -H "Content-Type: ${content_type}"  -H "ApiProtocol: ${ApiProtocol}"  ${baseurl}/$api "$@"
