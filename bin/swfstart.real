@@ -1,4 +1,23 @@
 #!/bin/bash 
+
+chkRegistryUp() {
+  	s=`curl -s -o /dev/null -w "%{response_code}\n" https://id.humbhionline.in/ping`
+  	if [ "${s}" == "200" ] 
+  	then
+  		s=`curl -s https://id.humbhionline.in/status |jq '.router_status'`
+	fi
+	expr $s = '"initialized"' 
+}
+
+waitForRegistry() {
+  status=`chkRegistryUp`
+  while [ "$status"  != "1" ] 
+  do
+	sleep 10
+	status=`chkRegistryUp`;
+  done
+  echo "Registry is Up"
+}
 source ~/.bash_aliases
 bindir=`dirname $0`
 projpath=$bindir/..
@@ -12,6 +31,7 @@ then
   export swf_env="development"
 fi
 
+waitForRegistry 
 mvn clean -DskipTests=true package
 if [ "$debug" = "" ] 
 then
