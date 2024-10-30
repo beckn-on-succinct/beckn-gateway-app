@@ -1,10 +1,14 @@
 #!/bin/bash 
 
 chkRegistryUp() {
-  	s=`curl -s -o /dev/null -w "%{response_code}\n" https://id.humbhionline.in/ping`
+    registry_url=`cat  overrideProperties/config/networks/*.json  |jq '.base_url'|sed s'/\"//g' ` 
+
+    echo "Checking status at ${registry_url}" 1>&2
+
+  	s=`curl -s -o /dev/null -w "%{response_code}\n" ${registry_url}/ping`
   	if [ "${s}" == "200" ] 
   	then
-  		s=`curl -s https://id.humbhionline.in/status |jq '.router_status'`
+  		s=`curl -s ${registry_url}/status|jq '.router_status'`
 	fi
 	expr $s = '"initialized"' 
 }
