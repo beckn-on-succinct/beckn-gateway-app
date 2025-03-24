@@ -6,7 +6,7 @@ chkRegistryUp() {
     echo "Checking status at ${registry_url}" 1>&2
 
   	s=`curl -s -o /dev/null -w "%{response_code}\n" ${registry_url}/ping`
-  	if [ "${s}" == "200" ] 
+  	if [ "${s}" == "204" ] 
   	then
   		s=`curl -s ${registry_url}/status|jq '.router_status'`
 	fi
