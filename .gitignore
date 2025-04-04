@@ -6,7 +6,9 @@
 tmp/
 overrideProperties/
 nohup.out
-database/
+database/*db
+database/*dmp
+database/*done
 /.gradle/
 .keystore
 .index/*
