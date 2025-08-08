@@ -21,6 +21,8 @@ create index ix_fulfillments_object_id on fulfillments(object_id,provider_id);
 create index ix_providers_object_id on providers(object_id,subscriber_id);
 create index ix_provider_locations_object_id on provider_locations(object_id,provider_id);
 create index ix_items_object_id on items(object_id,provider_id);
+create index ix_items_domain on items(domain); 
+
 create index ix_payments_object_id on payments(object_id,provider_id);
 create index ix_categories_object_id on categories(object_id,provider_id);
 

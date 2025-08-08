@@ -8,8 +8,11 @@ cd $projpath
 
 if [ $# -eq 0 ] 
 then 
+	if [ "$user" = "" ]
+	then 
     user=root
     password=root
+	fi
 else
     user=$1
     password=$2

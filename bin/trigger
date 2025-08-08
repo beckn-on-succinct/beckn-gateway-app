@@ -14,5 +14,5 @@ else
 fi 
 apiKey=`bin/getapikey`
 
-curl  http://localhost:${wport}/triggers/${action} 	  -H "ApiKey: $apiKey" -H "ApiProtocol: application/json" -d '{"Trigger":{"AgentName":"'${agent_name}'"}}' ;
+curl  http://localhost:${wport}/triggers/${action} 	  -H "ApiKey: $apiKey" -H "Content-Type: application/json" -d '{"Trigger":{"AgentName":"'${agent_name}'"}}' ;
 
